@@ -2,198 +2,156 @@
 
 ## Goal
 
-Create a standalone Jupyter notebook (`pharmacokinetics.ipynb`) that replicates the core PK calculation and visualization engine from the web application, making it accessible to researchers, students, and clinicians who prefer a Python/notebook workflow.
+Create a standalone Python pharmacokinetics toolkit with notebook frontends (Jupyter and marimo) that replicates the core PK calculation and visualization engine from the web application, making it accessible to researchers, students, and clinicians who prefer a Python/notebook workflow.
 
 ---
 
-## Phase 1: Minimal — Single-Dose Visualization
+## Architecture
 
-**Objective**: Get a working notebook that plots a single drug's concentration curve from user-provided parameters.
+All core business logic lives in the `pk_core/` Python package, independently testable and importable. The notebooks are thin presentation layers that import from `pk_core` and add plotting/formatting.
 
-### Deliverables
+```
+notebook/
+├── pk_core/                       # Core calculation library
+│   ├── __init__.py                # Public API re-exports
+│   ├── models.py                  # Prescription, DoseStep, constants
+│   ├── calculator.py              # Single-dose PK equations
+│   ├── accumulation.py            # Multi-dose accumulation engine
+│   ├── milestones.py              # PK milestone event calculation
+│   ├── analysis.py                # Steady-state metrics computation
+│   ├── serialization.py           # JSON I/O, legacy format handling
+│   └── tests/                     # 83 unit tests (pytest)
+│       ├── test_models.py         #   9 tests — dataclasses, constants
+│       ├── test_calculator.py     #  17 tests — PK equations, edge cases
+│       ├── test_accumulation.py   #  27 tests — multi-dose, schedules
+│       ├── test_milestones.py     #   9 tests — timeline events
+│       ├── test_analysis.py       #   8 tests — steady-state metrics
+│       └── test_serialization.py  #  13 tests — JSON round-trip, legacy
+├── pharmacokinetics.ipynb         # Jupyter notebook (presentation)
+├── pharmacokinetics.py            # marimo notebook (presentation, PEP 723)
+├── PLAN.md                        # This file
+└── README.md                      # End-user guide
+```
 
-1. **Dependencies & Setup Cell**
-   - `numpy`, `matplotlib` — standard scientific stack, no exotic dependencies
-   - Brief markdown header with educational disclaimer
+### Module Dependency Chain
 
-2. **Prescription Data Structure**
-   - Python dataclass `Prescription` mirroring the TypeScript model:
-     - `name`, `dose`, `half_life`, `uptake`, `peak`, `frequency`, `times`
-   - Frequency constants (`FREQUENCY_MAP`, `DEFAULT_TIMES`)
-
-3. **Core PK Equation — Single Dose**
-   - `calculate_concentration(t, dose, half_life, uptake)` — one-compartment first-order absorption
-   - Standard formula: `C(t) = dose * (ka/(ka-ke)) * (exp(-ke*t) - exp(-ka*t))`
-   - ka ≈ ke fallback: `C(t) = dose * ka * t * exp(-ke*t)` when `|ka - ke| < 0.001`
-   - Edge cases: zero/negative dose → 0, negative time → 0
-
-4. **Single-Dose Plot**
-   - Time axis (hours), relative concentration axis (0–1 normalized)
-   - Clear axis labels: "Time (hours)", "Relative Concentration (peak = 1.0)"
-   - Example: Ibuprofen 400mg, half-life 2h, uptake 0.5h
-
-5. **Interactive Parameter Input** (optional enhancement)
-   - `ipywidgets` sliders for dose, half-life, uptake — live-updating plot
-   - Fallback: plain variables at top of cell if widgets unavailable
-
-### Validation Criteria
-- [ ] Single-dose curve shape matches web app output
-- [ ] ka ≈ ke fallback produces smooth curve (test with uptake = half_life)
-- [ ] Zero dose returns flat zero line
-
----
-
-## Phase 2: Core Functionality — Multi-Dose Accumulation & Comparison
-
-**Objective**: Match the web app's primary value — multi-dose accumulation curves with multi-drug overlay.
-
-### Deliverables
-
-1. **Dose Expansion**
-   - `expand_dose_times(times, num_days)` — generate all dose administration times across simulation window
-   - Respect frequency-to-times mapping (bid → 2 times, tid → 3, etc.)
-
-2. **Multi-Dose Accumulation**
-   - `accumulate_doses(prescription, start_hours, end_hours, interval_minutes=15)`
-   - Sum raw contributions from all prior doses at each timepoint
-   - Normalize total curve to peak = 1.0
-   - Duration-limited dosing: if `duration` field set, stop administering doses after that window but continue observation
-
-3. **Metabolite Curves** (optional)
-   - `calculate_metabolite_concentration(t, dose, parent_half_life, metabolite_half_life, fm)`
-   - Sequential metabolism model with ka ≈ ke fallback
-   - Dashed line rendering, normalized to `relative_metabolite_level`
-
-4. **Multi-Drug Comparison Plot**
-   - Overlay multiple prescriptions on same axes with distinct colors
-   - Legend with drug name + frequency
-   - Example: Compare Ibuprofen (tid) vs. Acetaminophen (q6h)
-
-5. **Prescription I/O**
-   - Load prescriptions from JSON (same format as web app export)
-   - Save/export prescription sets to JSON
-   - Example JSON files bundled for quick-start
-
-6. **PK Milestone Timeline**
-   - `calculate_milestones(prescription, start, end)` — dose, absorption end, peak, half-life decay events
-   - Tabular display (pandas DataFrame or formatted markdown)
-   - Annotate key milestones on the plot (vertical lines or markers at dose times, peak markers)
-
-### Validation Criteria
-- [ ] Multi-dose curve shows accumulation toward steady-state (~5 half-lives)
-- [ ] Normalized peak = 1.0 for each drug independently
-- [ ] Metabolite dashed line appears when both `metabolite_life` and `relative_metabolite_level` provided
-- [ ] JSON round-trip: export → import produces identical curves
-- [ ] Milestone table matches web app timeline output
+```
+models.py (no external deps, uses math stdlib only)
+    ↓
+calculator.py (numpy)
+    ↓
+accumulation.py (numpy, calculator, models)
+    ↓
+milestones.py (numpy, accumulation, models)
+analysis.py (numpy, accumulation, models)
+serialization.py (json stdlib, models)
+```
 
 ---
 
-## Phase 3: Analysis — Deeper PK Insights
+## Phase 1: Minimal — Single-Dose Visualization ✅
 
-**Objective**: Leverage the notebook medium for analysis that goes beyond the web app's visualization.
+**Status**: Complete
 
 ### Deliverables
 
-1. **Steady-State Analysis**
-   - Compute and display steady-state peak/trough ratio
-   - Time-to-steady-state estimate (5× half-life)
-   - Accumulation factor: `1 / (1 - exp(-ke × tau))` where tau = dosing interval
-   - Compare theoretical vs. simulated steady-state values
-
-2. **Parameter Sensitivity Analysis**
-   - Vary one parameter (e.g., half-life ±20%) while holding others constant
-   - Plot family of curves showing sensitivity
-   - Heatmap: peak concentration vs. (half-life, uptake) parameter space
-
-3. **Dosing Schedule Comparison**
-   - Side-by-side: same total daily dose, different frequencies (e.g., 600mg tid vs. 900mg bid)
-   - Highlight differences in peak-trough swing
-   - Table of metrics: peak, trough, AUC (area under curve via trapezoidal integration), swing ratio
-
-4. **Titration/Taper Visualization**
-   - `DosageSchedule` support: steps with varying doses over time
-   - Plot showing dose changes and resulting concentration trajectory
-   - Useful for visualizing medication start-up or discontinuation protocols
-
-5. **Export & Reporting**
-   - Matplotlib figures saved as PNG/SVG
-   - Summary statistics exported to CSV
-   - Notebook convertible to PDF via `nbconvert` for sharing
+1. **`pk_core/models.py`** — `Prescription` dataclass, `DoseStep` dataclass, `FREQUENCY_MAP`, `DEFAULT_TIMES`, `KA_KE_TOLERANCE`, `LN2` constants
+2. **`pk_core/calculator.py`** — `calculate_concentration()` and `calculate_metabolite_concentration()` using one-compartment first-order absorption model with ka ≈ ke fallback
+3. **Single-dose plot** in both notebooks — Ibuprofen 400mg example
 
 ### Validation Criteria
-- [ ] Accumulation factor matches analytical formula
-- [ ] AUC computed via numpy trapezoid agrees with analytical AUC for simple cases
-- [ ] Sensitivity plots show expected monotonic relationships
-- [ ] Titration curves show smooth dose transitions
+- [x] Single-dose curve shape matches web app output
+- [x] ka ≈ ke fallback produces smooth curve (test with uptake = half_life)
+- [x] Zero/negative dose returns flat zero line
+- [x] Zero/negative half_life or uptake returns zeros (no ZeroDivisionError)
+- [x] Unit tests pass (17 calculator tests)
+
+---
+
+## Phase 2: Core Functionality — Multi-Dose Accumulation & Comparison ✅
+
+**Status**: Complete
+
+### Deliverables
+
+1. **`pk_core/accumulation.py`** — `parse_time()`, `expand_dose_times()`, `dosing_end_hours()`, `accumulate_doses()`, `accumulate_metabolite_doses()`, `accumulate_schedule()`, `generate_frequency_variants()`
+2. **`pk_core/milestones.py`** — `calculate_milestones()` returning event dicts
+3. **`pk_core/serialization.py`** — `prescription_to_dict()`, `prescription_from_dict()` (with legacy format migration), `save_prescriptions()`, `load_prescriptions()`
+4. **Multi-drug comparison plot** in notebooks — Ibuprofen vs Acetaminophen overlay
+5. **Milestone timeline display** — formatted table (print in Jupyter, `mo.md` table in marimo)
+6. **JSON I/O** — compatible with web app export format
+
+### Validation Criteria
+- [x] Multi-dose curve shows accumulation toward steady-state (~5 half-lives)
+- [x] Normalized peak = 1.0 for each drug independently
+- [x] Metabolite returns None when data incomplete, scales to `relative_metabolite_level` when complete
+- [x] JSON round-trip preserves all fields
+- [x] Legacy format migration works (`metaboliteConversionFraction`, nested `metaboliteHalfLife`)
+- [x] Duration-limited dosing stops doses but continues observation
+- [x] `generate_frequency_variants` skips 'custom', preserves daily dose total
+- [x] Unit tests pass (27 accumulation + 9 milestones + 13 serialization tests)
+
+---
+
+## Phase 3: Analysis — Deeper PK Insights ✅
+
+**Status**: Complete
+
+### Deliverables
+
+1. **`pk_core/analysis.py`** — `compute_steady_state_metrics()` returning dict with tau, accumulation factor, t_ss, ss_peak, ss_trough, swing
+2. **Steady-state display** — formatted output in both notebooks (print in Jupyter, markdown table in marimo)
+3. **Parameter sensitivity plot** — family of curves varying one parameter (e.g., half-life)
+4. **Dosing frequency comparison** — same daily dose across bid/tid/qid/q6h using `generate_frequency_variants()`
+5. **Titration/taper visualization** — `accumulate_schedule()` with `DoseStep` list, Prednisone taper example
+
+### Validation Criteria
+- [x] Accumulation factor matches analytical formula `1 / (1 - exp(-ke * tau))`
+- [x] Steady-state peak >= trough, swing = peak - trough
+- [x] SS peak near 1.0 for normalized curves
+- [x] Unit tests pass (8 analysis tests)
 
 ---
 
 ## Future Recommendations
 
-Items beyond the three phases, for consideration as the notebook matures:
+Items beyond the three phases, for consideration as the project matures:
 
-1. **Two-Compartment Model**
-   - Add distribution phase (alpha/beta elimination)
-   - Relevant for IV drugs and drugs with tissue redistribution
-   - Would require additional parameters (Vd_central, Vd_peripheral, inter-compartmental clearance)
-
-2. **Population PK (Monte Carlo)**
-   - Add inter-individual variability (IIV) to parameters
-   - Simulate population of virtual patients with log-normal parameter distributions
-   - Plot confidence bands (5th/95th percentile) around mean curve
-
-3. **Bioavailability (F < 1.0)**
-   - Currently assumes F = 1.0 (complete absorption)
-   - Add bioavailability parameter for oral drugs with incomplete absorption
-   - Compare IV (F=1.0) vs. oral (F<1.0) administration
-
-4. **Drug-Drug Interactions**
-   - Model enzyme inhibition/induction effects on ke
-   - Example: CYP3A4 inhibitor increasing half-life of co-administered drug
-
-5. **Therapeutic Window Overlay**
-   - Add horizontal bands for MEC (minimum effective concentration) and MTC (minimum toxic concentration)
-   - Requires absolute concentration values (needs Vd parameter)
-   - Visual indicator of time-in-therapeutic-range
-
-6. **Real Patient Data Fitting**
-   - Import measured drug levels (blood draws)
-   - Fit model parameters to observed data using scipy.optimize
-   - Bayesian estimation of individual PK parameters
-
-7. **Interactive Dashboard (Panel/Voila)**
-   - Convert notebook into standalone web dashboard
-   - Full widget-based UI without requiring Jupyter
-   - Deployable to cloud (Heroku, Railway, etc.)
-
-8. **Colab / Binder Integration**
-   - One-click launch badge for Google Colab
-   - Binder configuration for zero-install access
-   - Pre-install dependencies in environment.yml
+1. **Two-Compartment Model** — distribution phase (alpha/beta elimination) for IV drugs and tissue redistribution
+2. **Population PK (Monte Carlo)** — inter-individual variability with log-normal parameter distributions and confidence bands
+3. **Bioavailability (F < 1.0)** — parameter for incomplete oral absorption; compare IV vs. oral
+4. **Drug-Drug Interactions** — model enzyme inhibition/induction effects on ke (e.g., CYP3A4)
+5. **Therapeutic Window Overlay** — MEC/MTC horizontal bands (requires absolute concentration via Vd)
+6. **Real Patient Data Fitting** — import measured drug levels, fit parameters with scipy.optimize
+7. **Interactive Dashboard (Panel/Voila)** — standalone web dashboard deployable to cloud
+8. **Colab / Binder Integration** — one-click launch badges for zero-install access
+9. **Input Validation** — port `validatePrescription()` from TypeScript to `pk_core/models.py`
+10. **AUC Computation** — trapezoidal integration for area-under-curve comparisons
 
 ---
 
 ## Technical Notes
 
-### Porting Strategy
-- The TypeScript calculation engine uses pure functions with no UI dependencies — direct port to Python
-- NumPy vectorization replaces the TypeScript loop-based approach for better performance
-- Matplotlib replaces Chart.js; both handle line charts well for this use case
-- JSON prescription format is identical between web app and notebook
+### Design Decisions
 
-### Dependencies (Minimal)
-| Package | Purpose | Phase |
-|---------|---------|-------|
-| `numpy` | Array math, exponentials | 1 |
-| `matplotlib` | Plotting | 1 |
-| `ipywidgets` | Interactive sliders (optional) | 1 |
-| `pandas` | Milestone tables, CSV export | 2 |
-| `scipy` | Trapezoidal AUC, future curve fitting | 3 |
+- **`math.log(2)` in models.py** — avoids numpy dependency in the models module; value is identical to `np.log(2)`
+- **`dosing_end_hours()` is public** — shared by `accumulation.py` and `milestones.py`, renamed from `_dosing_end_hours`
+- **`compute_steady_state_metrics()` returns dict** — separates computation from display; notebooks wrap with formatting
+- **`generate_frequency_variants()` returns list** — separates dose adjustment logic from plotting
+- **Dose filtering uses strict `<`** — matches TypeScript `t < dosingEndHours` (dose at exact end has zero observation time)
 
-### File Structure
-```
-notebook/
-├── PLAN.md                    # This file
-├── README.md                  # End-user guide
-└── pharmacokinetics.ipynb     # The notebook
+### Dependencies
+
+| Package | Purpose | Required By |
+|---------|---------|-------------|
+| `numpy` | Array math, exponentials | `pk_core` (calculator, accumulation, milestones, analysis) |
+| `matplotlib` | Plotting | Notebooks only |
+| `marimo` | Reactive notebook runtime | `pharmacokinetics.py` only |
+| `pytest` | Test runner | `pk_core/tests/` only |
+
+### Running Tests
+
+```bash
+cd notebook
+python -m pytest pk_core/tests/ -v
 ```
