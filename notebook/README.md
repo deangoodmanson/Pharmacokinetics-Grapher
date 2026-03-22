@@ -35,16 +35,19 @@ pipx run marimo edit pharmacokinetics.py
 
 ### Option B: Jupyter notebook
 
+**With `uv` (recommended):**
+
 ```bash
 cd notebook
-pip install numpy matplotlib jupyter
-jupyter notebook pharmacokinetics.ipynb
+uv sync
+uv run jupyter notebook pharmacokinetics.ipynb
 ```
 
-Or with a virtual environment:
+**With pip:**
 
 ```bash
-python -m venv .venv
+cd notebook
+python3.13 -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install numpy matplotlib jupyter
 jupyter notebook pharmacokinetics.ipynb
@@ -78,6 +81,7 @@ notebook/
 │   └── tests/                     # 83 unit tests
 ├── pharmacokinetics.ipynb         # Jupyter notebook
 ├── pharmacokinetics.py            # marimo notebook (PEP 723)
+├── pyproject.toml                 # Python project config (uv/pip)
 ├── PLAN.md                        # Implementation plan
 └── README.md                      # This file
 ```
@@ -167,7 +171,8 @@ All values come from pharmacy inserts (package inserts provide ranges; pick a re
 
 ```bash
 cd notebook
-python -m pytest pk_core/tests/ -v
+uv sync --extra dev
+uv run pytest pk_core/tests/ -v
 ```
 
 83 tests covering all core modules: models, calculator, accumulation, milestones, analysis, and serialization.

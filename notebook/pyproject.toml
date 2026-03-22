@@ -1,0 +1,15 @@
+[project]
+name = "pharmacokinetics-notebook"
+version = "0.1.0"
+description = "Pharmacokinetics visualization notebooks and pk_core library"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "jupyter",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]

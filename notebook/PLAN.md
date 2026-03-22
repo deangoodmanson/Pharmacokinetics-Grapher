@@ -29,6 +29,7 @@ notebook/
 │       └── test_serialization.py  #  13 tests — JSON round-trip, legacy
 ├── pharmacokinetics.ipynb         # Jupyter notebook (presentation)
 ├── pharmacokinetics.py            # marimo notebook (presentation, PEP 723)
+├── pyproject.toml                 # Python project config (uv/pip)
 ├── PLAN.md                        # This file
 └── README.md                      # End-user guide
 ```
@@ -153,5 +154,6 @@ Items beyond the three phases, for consideration as the project matures:
 
 ```bash
 cd notebook
-python -m pytest pk_core/tests/ -v
+uv sync --extra dev
+uv run pytest pk_core/tests/ -v
 ```
